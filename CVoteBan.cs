@@ -46,6 +46,8 @@ namespace PRoConEvents
     private string hackCryResponse;
     private List<string> additionalTriggers;
 
+    private enumBoolYesNo enableTrollMode;
+
     private List<string> privilegedUsers;
     private List<string> privilegedTags;
     private string whitelistActionTaken;
@@ -138,6 +140,8 @@ namespace PRoConEvents
       this.additionalTriggers = new List<string>();
       this.additionalTriggers.Add("aimbot");
 
+      this.enableTrollMode = enumBoolYesNo.No;
+
       this.privilegedUsers = new List<string>();
       this.privilegedTags = new List<string>();
       this.whitelistActionTaken = "None";
@@ -203,7 +207,7 @@ namespace PRoConEvents
 
     public string GetPluginVersion()
     {
-      return "2.0.1.0";
+      return "2.2.0.0";
     }
 
     public string GetPluginAuthor()
@@ -213,7 +217,7 @@ namespace PRoConEvents
 
     public string GetPluginWebsite()
     {
-      return "www.phogue.net/forumvb/showthread.php?3582";
+      return "github.com/Hedius/voteban";
     }
 
     public string GetPluginDescription()
@@ -221,6 +225,7 @@ namespace PRoConEvents
       return @"
         <h2>Description</h2>
           <p>This plugin allows players to start a vote to ban or kick another player on the server.  This is particularly useful to work against all the hackers we have seen so much of lately.</p>
+          <p>Furthermore, this plugin supports a troll mode (Added by E4GL). E4GL runs servers with 100% auditing. Vote Bans and Votekicks are garbage. Therefore, we run those votes but without any affect. A fun msg is sent if a vote is successful.</p>
         <h2>In-Game Commands</h2>
           <blockquote><h4>!voteban &lt;player_name&gt;</h4>Puts in a request to initiate a Vote Ban on the specified player.</blockquote>
           <blockquote><h4>!votekick &lt;player_name&gt;</h4>Puts in a request to initiate a Vote Kick on the specified player.</blockquote>
@@ -252,6 +257,8 @@ namespace PRoConEvents
             <blockquote><h4>Hack Cry Trigger Number</h4>The number of times that the word ""hack"" needs to be said in chat, recurrently, to trigger the responder.</blockquote>
             <blockquote><h4>Hack Cry Trigger Response</h4>The server message response sent when the responder is triggered. (Use <b>%vbcommand%</b> and <b>%vkcommand%</b> for your currently set Vote Ban and Vote Kick commands.)</blockquote>
             <blockquote><h4>Additional Triggers</h4>Any additional words in chat that you would like to trigger the responder.</blockquote>
+          <h3>Trolling</h3>
+            <blockquote><h4>Enable Troll Mode?</h4>Enable the troll mode as described at the top.</blockquote>
           <h3>Whitelist</h3>
             <p>This whitelist guards admins as well as additional players of your choice from being Vote Banned/Kicked. It recognizes players as admins if they have an account created and are able to connect to the Procon Layer.</p>
             <blockquote><h4>In-Game Names</h4>Allows you to add additional players to the whitelist.</blockquote>
@@ -269,6 +276,9 @@ namespace PRoConEvents
             <p>This allows you to customize all the messages that this plugin sends to the server.</p>
             <blockquote><h4>Reset Messages?</h4>Use this to retrieve the default list of messages. This is useful when you may have made a mistake and messages start to not show up.</blockquote>
             <blockquote><h4>Message List</h4>The list containing all the messages that this plugin sends to the server. Be careful not to delete any lines otherwise things will go wrong!</blockquote>
+          <h3>Troll Mode</h3>
+            <p>This allows you to enable the troll mode which only runs fake votes without any actual actions. For the lolz.</p>
+            <blockquote><h4>Enable Troll Mode?</h4>Use this to enable the troll mode.</blockquote>
         ";
     }
 
@@ -356,6 +366,8 @@ namespace PRoConEvents
 
       lstReturn.Add(new CPluginVariable("In-Game Messages|Reset Messages?", "enum.resetMessages(...|Do it!)", resetMessages));
       lstReturn.Add(new CPluginVariable("In-Game Messages|Message List", typeof(string[]), inGameMessages.ToArray()));
+      
+      lstReturn.Add(new CPluginVariable("Trolling|Enable Troll Mode?", typeof(enumBoolYesNo), enableTrollMode));
 
       return lstReturn;
     }
@@ -400,6 +412,8 @@ namespace PRoConEvents
 
       lstReturn.Add(new CPluginVariable("Reset Messages?", "enum.resetMessages(...|Do it!)", resetMessages));
       lstReturn.Add(new CPluginVariable("Message List", typeof(string[]), inGameMessages.ToArray()));
+      
+      lstReturn.Add(new CPluginVariable("Enable Troll Mode?", typeof(enumBoolYesNo), enableTrollMode));
 
       return lstReturn;
     }
@@ -607,6 +621,10 @@ namespace PRoConEvents
           inGameMessages.Add("say \"Vote Kick is currently disabled! There must be at least %2% players for Vote Kick to be enabled.\" all");
         }
       }
+      else if (strVariable.CompareTo("Enable Troll Mode?") == 0 && Enum.IsDefined(typeof(enumBoolYesNo), strValue) == true)
+      {
+        enableTrollMode = (enumBoolYesNo)Enum.Parse(typeof(enumBoolYesNo), strValue);
+      }
     }
 
     private void initInGameMessages()
@@ -693,6 +711,11 @@ namespace PRoConEvents
       inGameMessages.Add("say \"Vote Ban is currently disabled! There must be at least %2% players for Vote Ban to be enabled.\" all");
       inGameMessages.Add("---------- %1% = voter %2% = Vote Kick player count threshold ----------"); // 80
       inGameMessages.Add("say \"Vote Kick is currently disabled! There must be at least %2% players for Vote Kick to be enabled.\" all");
+      inGameMessages.Add("---------- %1 = votedplayer %2 = ban reason Trolling msgs -----------"); // 82
+      inGameMessages.Add("yell \"Vote Ban successful! However, %1 stays here! :) We don't ban for votes since they lack auditing!\" all");
+      inGameMessages.Add("say \"Open a report on our discord with proof to get %1 banned. :)\" all");
+      inGameMessages.Add("yell \"Vote Kick successful! However, %1 stays here! :) We don't kick for votes since they lack auditing!\" all");
+      inGameMessages.Add("say \"Open a report on our discord with proof to get %1 banned. :)\" all");
     }
 
     private void processMessage(int messageLine, params object[] items)
@@ -831,6 +854,8 @@ namespace PRoConEvents
     private void banPlayerByName()
     {
       banningPlayerByName = true;
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
 
       this.ExecuteCommand("procon.protected.send", "admin.listPlayers", "all");
     }
@@ -839,6 +864,8 @@ namespace PRoConEvents
     {
       foundvotedVictim = false;
       banningPlayerByGUID = true;
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
 
       this.ExecuteCommand("procon.protected.send", "admin.listPlayers", "all");
     }
@@ -847,6 +874,8 @@ namespace PRoConEvents
     {
       foundvotedVictim = false;
       banningPlayerByIP = true;
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
 
       this.ExecuteCommand("procon.protected.send", "punkBuster.pb_sv_command pb_sv_plist");
     }
@@ -855,6 +884,8 @@ namespace PRoConEvents
     {
       foundvotedVictim = false;
       banningPlayerByPbGuid = true;
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
 
       this.ExecuteCommand("procon.protected.send", "punkBuster.pb_sv_command pb_sv_plist");
     }
@@ -862,6 +893,8 @@ namespace PRoConEvents
     private void kickPlayer()
     {
       kickingPlayer = true;
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
 
       this.ExecuteCommand("procon.protected.send", "admin.listPlayers", "all");
     }
@@ -891,8 +924,9 @@ namespace PRoConEvents
       this.ExecuteCommand("procon.protected.send", "admin.listPlayers", "all");
     }
 
-    private void whitelistActionHandler(string speaker, string votedPlayer)
-    {
+    private void whitelistActionHandler(string speaker, string votedPlayer) {
+      if (enableTrollMode == enumBoolYesNo.Yes)
+        return;
       if (whitelistActionTaken == "Kill")
       {
         this.ExecuteCommand("procon.protected.send", "admin.killPlayer", speaker);
@@ -1093,21 +1127,32 @@ namespace PRoConEvents
           }
         }
 
-        processMessage(38, null, votedVictim, voteReason);
+        if (enableTrollMode == enumBoolYesNo.Yes) {
+          processMessage(83, null, votedVictim, voteReason);
+          processMessage(84, null, votedVictim, voteReason);
+        } else {
+          processMessage(38, null, votedVictim, voteReason);
 
-        if (banType == "GUID")
-          banPlayerByGuid();
-        else if (banType == "IP")
-          banPlayerByIp();
-        else if (banType == "Name")
-          banPlayerByName();
-        else if (banType == "PB GUID")
-          banPlayerByPbGuid();
+          if (banType == "GUID")
+            banPlayerByGuid();
+          else if (banType == "IP")
+            banPlayerByIp();
+          else if (banType == "Name")
+            banPlayerByName();
+          else if (banType == "PB GUID")
+            banPlayerByPbGuid();
+        }
       }
       else if (voteType == "kick")
       {
-        processMessage(41, null, votedVictim);
-        kickPlayer();
+        if (enableTrollMode == enumBoolYesNo.Yes) {
+          processMessage(85, null, votedVictim);
+          processMessage(86, null, votedVictim);
+        }
+        else {
+          processMessage(41, null, votedVictim);
+          kickPlayer();
+        }
 
         for (int i = 0; i < playerBeingKickVoted.Count; i++)
         {
