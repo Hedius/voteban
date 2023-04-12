@@ -112,6 +112,7 @@ namespace PRoConEvents
     private System.Timers.Timer voteInProgress;
     private System.Timers.Timer voteProgressDisplay;
 
+    private String discordWebhookURL;
     private BattlelogClient blClient;
 
     public CVoteBan()
@@ -141,6 +142,7 @@ namespace PRoConEvents
       this.additionalTriggers.Add("aimbot");
 
       this.enableTrollMode = enumBoolYesNo.No;
+      this.discordWebhookURL = "";
 
       this.privilegedUsers = new List<string>();
       this.privilegedTags = new List<string>();
@@ -259,6 +261,8 @@ namespace PRoConEvents
             <blockquote><h4>Additional Triggers</h4>Any additional words in chat that you would like to trigger the responder.</blockquote>
           <h3>Trolling</h3>
             <blockquote><h4>Enable Troll Mode?</h4>Enable the troll mode as described at the top.</blockquote>
+          <h3>Discord Webhook</h3>
+            <blockquote><h4>Webhook URL</h4>URL for discord notifications. Empty = disabled.</blockquote>
           <h3>Whitelist</h3>
             <p>This whitelist guards admins as well as additional players of your choice from being Vote Banned/Kicked. It recognizes players as admins if they have an account created and are able to connect to the Procon Layer.</p>
             <blockquote><h4>In-Game Names</h4>Allows you to add additional players to the whitelist.</blockquote>
@@ -368,6 +372,7 @@ namespace PRoConEvents
       lstReturn.Add(new CPluginVariable("In-Game Messages|Message List", typeof(string[]), inGameMessages.ToArray()));
       
       lstReturn.Add(new CPluginVariable("Trolling|Enable Troll Mode?", typeof(enumBoolYesNo), enableTrollMode));
+      lstReturn.Add(new CPluginVariable("Discord Webhook|Webhook URL", discordWebhookURL.GetType(), discordWebhookURL));
 
       return lstReturn;
     }
@@ -414,6 +419,7 @@ namespace PRoConEvents
       lstReturn.Add(new CPluginVariable("Message List", typeof(string[]), inGameMessages.ToArray()));
       
       lstReturn.Add(new CPluginVariable("Enable Troll Mode?", typeof(enumBoolYesNo), enableTrollMode));
+      lstReturn.Add(new CPluginVariable("Discord Webhook|Webhook URL", discordWebhookURL.GetType(), discordWebhookURL));
 
       return lstReturn;
     }
@@ -625,6 +631,10 @@ namespace PRoConEvents
       {
         enableTrollMode = (enumBoolYesNo)Enum.Parse(typeof(enumBoolYesNo), strValue);
       }
+      else if (strVariable.CompareTo("Webhook URL") == 0)
+      {
+        discordWebhookURL = strValue;
+      }
     }
 
     private void initInGameMessages()
@@ -713,9 +723,9 @@ namespace PRoConEvents
       inGameMessages.Add("say \"Vote Kick is currently disabled! There must be at least %2% players for Vote Kick to be enabled.\" all");
       inGameMessages.Add("---------- %1 = votedplayer %2 = ban reason Trolling msgs -----------"); // 82
       inGameMessages.Add("yell \"Vote Ban successful! However, %1 stays here! :) We don't ban for votes since they lack auditing!\" all");
-      inGameMessages.Add("say \"Open a report on our discord with proof to get %1 banned. :)\" all");
+      inGameMessages.Add("say \"Open a report on our discord with proof to get %1% banned. :)\" all");
       inGameMessages.Add("yell \"Vote Kick successful! However, %1 stays here! :) We don't kick for votes since they lack auditing!\" all");
-      inGameMessages.Add("say \"Open a report on our discord with proof to get %1 banned. :)\" all");
+      inGameMessages.Add("say \"Open a report on our discord with proof to get %1% banned. :)\" all");
     }
 
     private void processMessage(int messageLine, params object[] items)
@@ -1142,6 +1152,7 @@ namespace PRoConEvents
           else if (banType == "PB GUID")
             banPlayerByPbGuid();
         }
+        SendDiscordNotification("Vote Ban for " + votedVictim + " sucessful! Check the player! Reason: " + voteReason);
       }
       else if (voteType == "kick")
       {
@@ -1159,6 +1170,7 @@ namespace PRoConEvents
           if (playerBeingKickVoted[i] == votedVictim)
             playerBeingKickVotedCount[i] = 0;
         }
+        SendDiscordNotification("Vote Kick for " + votedVictim + " sucessful! Check the player!");
       }
 
       this.voteInProgress.Stop();
@@ -1968,6 +1980,50 @@ namespace PRoConEvents
       }
     }
 
+    public void ConsoleWrite(String msg) {
+      this.ExecuteCommand("procon.protected.pluginconsole.write", msg);
+    }
+
+    public void SendDiscordNotification(String msg) {
+      if (discordWebhookURL.Length == 0) {
+        return;
+      }
+      ThreadStart sendNotification = delegate {
+        try { 
+          ConsoleWrite("^b[Webhook]^n DiscordWebhook thread started.");
+          
+          Hashtable embed = new Hashtable{
+            {"title", "VoteBan Event"},
+            {"description", msg},
+            {"color", 16711680},
+            {"timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")},
+          };
+          ArrayList embeds = new ArrayList { embed };
+
+          Hashtable jsonTable = new Hashtable();
+          jsonTable["username"] = "VoteBan";
+          jsonTable["embeds"] = embeds;
+		
+          // send request
+          WebRequest request = WebRequest.Create(discordWebhookURL);
+          request.Method = "POST";
+          request.ContentType = "application/json";
+          byte[]   byteArray = Encoding.UTF8.GetBytes(JSON.JsonEncode(jsonTable));
+          request.ContentLength = byteArray.Length;
+          Stream dataStream = request.GetRequestStream();
+          dataStream.Write(byteArray, 0, byteArray.Length);
+          dataStream.Close();
+		
+          ConsoleWrite("^b[Webhook]^n DiscordWebhook thread returning.");
+        } catch (Exception e) {
+          ConsoleWrite("Webhook failed: " + e.ToString());
+        }
+      }; 
+      Thread t = new Thread(sendNotification);
+      t.IsBackground = true;
+      t.Start();
+    }
+    
     #region BattlelogClient Class
 
     public class BattlelogClient
